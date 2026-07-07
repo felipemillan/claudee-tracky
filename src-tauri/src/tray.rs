@@ -57,7 +57,7 @@ pub fn toggle_popup_window(app: &AppHandle, tray_pos: tauri::PhysicalPosition<f6
         let logical_x = tray_pos.x as f64 / scale_factor;
         let logical_y = tray_pos.y as f64 / scale_factor;
 
-        let width = 320.0;
+        let width = 640.0;
         let popup_x = logical_x - (width / 2.0);
         let popup_y = logical_y + 12.0;
 
