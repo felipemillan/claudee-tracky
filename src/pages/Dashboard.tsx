@@ -228,11 +228,7 @@ export const Dashboard: React.FC = () => {
     });
   }, [history]);
 
-  const getUsageBarColor = (percent: number) => {
-    if (percent >= 90) return "bg-red-500";
-    if (percent >= 75) return "bg-amber-500";
-    return "bg-emerald-500";
-  };
+
 
   const handleOpenClaude = async () => {
     await openUrl("https://claude.ai");
