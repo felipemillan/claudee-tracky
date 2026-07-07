@@ -90,6 +90,31 @@ pub fn run() {
 
             // Spawn background polling task
             let manager = app_handle.state::<polling::PollingManager>();
+
+            // Load last snapshot state from history to prevent showing 0% on startup
+            let history = config::load_history(&app_handle);
+            if let Some(last_entry) = history.last() {
+                if let Ok(mut state) = manager.state.lock() {
+                    let snapshot = network::UsageSnapshot {
+                        five_hour_utilization: last_entry.five_hour_utilization as u32,
+                        seven_day_utilization: last_entry.seven_day_utilization as u32,
+                        seven_day_sonnet_utilization: None,
+                        five_hour_reset_in: None,
+                        seven_day_reset_in: None,
+                        plan: "pro".to_string(), // will be updated on first successful poll
+                        last_updated: last_entry.timestamp.clone(),
+                        status: "active".to_string(),
+                        error_message: None,
+                        spend_used: 0.0,
+                        spend_limit: 100.0,
+                        spend_percent: 0,
+                    };
+                    state.current_snapshot = Some(snapshot.clone());
+                    // Sync initial tray status bar text
+                    tray::update_tray_menu_text(&app_handle, &snapshot);
+                }
+            }
+
             let polling_state = manager.state.clone();
             
             tauri::async_runtime::spawn(async move {
