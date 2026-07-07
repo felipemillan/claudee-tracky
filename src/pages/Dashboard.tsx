@@ -33,7 +33,9 @@ import {
   Legend
 } from "recharts";
 
-type Tab = "overview" | "history" | "settings" | "logs" | "about";
+import { invoke } from "@tauri-apps/api/core";
+
+type Tab = "overview" | "history" | "analytics" | "settings" | "logs" | "about";
 
 export const Dashboard: React.FC = () => {
   const {
@@ -56,6 +58,8 @@ export const Dashboard: React.FC = () => {
   const [showToken, setShowToken] = useState(false);
   const [logFilter, setLogFilter] = useState<string>("all");
   const [logSearch, setLogSearch] = useState<string>("");
+  const [analytics, setAnalytics] = useState<any>(null);
+  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
 
   // Local settings form state
   const [formInterval, setFormInterval] = useState<number>(30);
@@ -67,6 +71,18 @@ export const Dashboard: React.FC = () => {
   const [formCustomToken, setFormCustomToken] = useState("");
 
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  const fetchAnalyticsData = async () => {
+    try {
+      setLoadingAnalytics(true);
+      const res = await invoke("get_claude_cli_analytics");
+      setAnalytics(res);
+    } catch (err) {
+      console.error("Failed to load Claude CLI analytics:", err);
+    } finally {
+      setLoadingAnalytics(false);
+    }
+  };
 
   // Load configuration data on mount
   useEffect(() => {
@@ -82,6 +98,7 @@ export const Dashboard: React.FC = () => {
     fetchHistory();
     fetchCurrentState();
     fetchLogs();
+    fetchAnalyticsData();
 
     // Set theme class
     const updateTheme = (theme: "light" | "dark" | "system") => {
@@ -103,7 +120,14 @@ export const Dashboard: React.FC = () => {
       fetchCurrentState();
     }, 5000);
 
-    return () => clearInterval(logInterval);
+    const analyticsInterval = setInterval(() => {
+      fetchAnalyticsData();
+    }, 15000);
+
+    return () => {
+      clearInterval(logInterval);
+      clearInterval(analyticsInterval);
+    };
   }, [fetchSettings, fetchHistory, fetchCurrentState, fetchLogs, settings?.theme]);
 
   // Handle theme changes
@@ -252,6 +276,17 @@ export const Dashboard: React.FC = () => {
             >
               <History className="w-4 h-4 text-cyan-400" />
               Usage History
+            </button>
+            <button
+              onClick={() => setActiveTab("analytics")}
+              className={`flex items-center gap-3 w-full px-3 py-2 text-xs font-semibold rounded-lg transition-all ${
+                activeTab === "analytics"
+                  ? "bg-zinc-800 dark:bg-zinc-800 light:bg-zinc-200 text-white dark:text-white light:text-black shadow-md border border-zinc-700/50 dark:border-zinc-700/50 light:border-zinc-300"
+                  : "text-zinc-400 hover:bg-zinc-900/40 dark:hover:bg-zinc-900/40 light:hover:bg-zinc-200/50 hover:text-zinc-200"
+              }`}
+            >
+              <Sparkles className="w-4 h-4 text-purple-400" />
+              Claude CLI Insights
             </button>
             <button
               onClick={() => setActiveTab("settings")}
@@ -546,6 +581,156 @@ export const Dashboard: React.FC = () => {
                   )}
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* TAB: ANALYTICS */}
+          {activeTab === "analytics" && (
+            <div className="space-y-6">
+              {loadingAnalytics && !analytics ? (
+                <div className="flex flex-col items-center justify-center p-12 text-zinc-400">
+                  <RefreshCw className="w-8 h-8 animate-spin mb-3 text-purple-400" />
+                  <span className="text-xs font-semibold">Scanning Claude CLI configuration & project histories...</span>
+                </div>
+              ) : !analytics ? (
+                <div className="flex flex-col items-center justify-center p-12 bg-zinc-900/25 border border-zinc-800/50 rounded-xl text-center">
+                  <Sparkles className="w-10 h-10 text-zinc-600 mb-3" />
+                  <h4 className="font-bold text-zinc-300 mb-1">No Claude CLI Configuration Found</h4>
+                  <p className="text-xs text-zinc-500 max-w-sm leading-normal">
+                    Could not find a <code className="bg-zinc-900 px-1 py-0.5 rounded text-zinc-300">~/.claude/</code> configuration directory on your machine.
+                    Make sure you have installed and executed the Claude Code CLI.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Stats Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-zinc-900/40 border border-zinc-800/50 rounded-xl p-4 flex flex-col justify-between">
+                      <div className="text-zinc-400 text-[10px] font-semibold uppercase tracking-wider">Total CLI Projects</div>
+                      <div className="text-3xl font-extrabold tracking-tight my-2 text-purple-400">
+                        {analytics.total_projects}
+                      </div>
+                      <div className="text-[10px] text-zinc-500 font-mono">Tracked directories in Claude history</div>
+                    </div>
+                    <div className="bg-zinc-900/40 border border-zinc-800/50 rounded-xl p-4 flex flex-col justify-between">
+                      <div className="text-zinc-400 text-[10px] font-semibold uppercase tracking-wider">Total Chat Sessions</div>
+                      <div className="text-3xl font-extrabold tracking-tight my-2 text-indigo-400">
+                        {analytics.total_sessions}
+                      </div>
+                      <div className="text-[10px] text-zinc-500 font-mono">Total sessions executed (.jsonl logs)</div>
+                    </div>
+                    <div className="bg-zinc-900/40 border border-zinc-800/50 rounded-xl p-4 flex flex-col justify-between">
+                      <div className="text-zinc-400 text-[10px] font-semibold uppercase tracking-wider">Active Todos/Tasks</div>
+                      <div className="text-3xl font-extrabold tracking-tight my-2 text-amber-400">
+                        {analytics.total_todos}
+                      </div>
+                      <div className="text-[10px] text-zinc-500 font-mono">Pending todo items across workspaces</div>
+                    </div>
+                  </div>
+
+                  {/* Main Grid: Projects & Todos */}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Projects Table */}
+                    <div className="lg:col-span-2 bg-zinc-900/25 border border-zinc-800/50 rounded-xl p-5 flex flex-col h-[400px]">
+                      <h3 className="font-bold text-xs uppercase tracking-wider text-zinc-400 border-b border-zinc-850 pb-2 mb-3">
+                        Workspace History Breakdown
+                      </h3>
+                      <div className="flex-grow overflow-y-auto pr-1">
+                        {analytics.active_projects.length === 0 ? (
+                          <div className="h-full flex items-center justify-center text-xs text-zinc-500">
+                            No project directories logged yet.
+                          </div>
+                        ) : (
+                          <table className="w-full text-left text-xs">
+                            <thead>
+                              <tr className="text-zinc-500 border-b border-zinc-850">
+                                <th className="pb-2 font-medium">Project Name</th>
+                                <th className="pb-2 font-medium">Sessions</th>
+                                <th className="pb-2 font-medium">Last Active</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {analytics.active_projects.map((project: any, idx: number) => (
+                                <tr key={idx} className="border-b border-zinc-900 hover:bg-zinc-900/20">
+                                  <td className="py-2.5 font-semibold text-zinc-300">
+                                    <div className="truncate max-w-[200px]" title={project.path}>
+                                      {project.name}
+                                    </div>
+                                    <div className="text-[10px] text-zinc-500 font-mono truncate max-w-[220px]">
+                                      {project.path}
+                                    </div>
+                                  </td>
+                                  <td className="py-2.5 font-mono text-zinc-400">{project.session_count}</td>
+                                  <td className="py-2.5 text-zinc-400">
+                                    {project.last_active === "Unknown" ? "Unknown" : new Date(project.last_active).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Right Hand: Todos & Config */}
+                    <div className="space-y-6">
+                      {/* Active Todos */}
+                      <div className="bg-zinc-900/25 border border-zinc-800/50 rounded-xl p-5 flex flex-col h-[200px] overflow-hidden">
+                        <h3 className="font-bold text-xs uppercase tracking-wider text-zinc-400 border-b border-zinc-850 pb-2 mb-3">
+                          Active Todos
+                        </h3>
+                        <div className="flex-grow overflow-y-auto space-y-1.5 pr-1">
+                          {analytics.recent_todos.length === 0 ? (
+                            <div className="h-full flex items-center justify-center text-xs text-zinc-500 text-center">
+                              No active todo tasks found in ~/.claude/todos/
+                            </div>
+                          ) : (
+                            analytics.recent_todos.map((todo: string, idx: number) => (
+                              <div key={idx} className="flex items-start gap-2 text-xs text-zinc-300 leading-tight">
+                                <span className="text-amber-500 shrink-0 select-none">▪</span>
+                                <span className="font-mono">{todo.replace(/^[\s-*]+/, "")}</span>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Global Settings */}
+                      <div className="bg-zinc-900/25 border border-zinc-800/50 rounded-xl p-5 h-[176px] overflow-hidden flex flex-col">
+                        <h3 className="font-bold text-xs uppercase tracking-wider text-zinc-400 border-b border-zinc-850 pb-2 mb-3">
+                          Claude Global Settings
+                        </h3>
+                        <div className="flex-grow overflow-y-auto space-y-2 pr-1 text-zinc-400">
+                          {analytics.global_settings ? (
+                            <div className="grid grid-cols-2 gap-y-2 gap-x-1">
+                              <div>Primary Model:</div>
+                              <div className="font-mono text-zinc-200 truncate">
+                                {analytics.global_settings.model || "Default"}
+                              </div>
+                              <div>Default Editor:</div>
+                              <div className="font-mono text-zinc-200 truncate">
+                                {analytics.global_settings.editor || "N/A"}
+                              </div>
+                              <div>Auto Commit:</div>
+                              <div className="font-mono text-zinc-200">
+                                {analytics.global_settings.autoCommit === true ? "Enabled" : "Disabled"}
+                              </div>
+                              <div>Theme Style:</div>
+                              <div className="font-mono text-zinc-200 capitalize">
+                                {analytics.global_settings.theme || "System"}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="h-full flex items-center justify-center text-xs text-zinc-500">
+                              No global settings file found.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

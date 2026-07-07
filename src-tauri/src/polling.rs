@@ -105,13 +105,14 @@ async fn perform_poll(app_handle: &AppHandle, state_lock: &Arc<Mutex<PollingStat
             let mut state = state_lock.lock().unwrap();
             state.is_refreshing = false;
             
+            let plan = state.current_snapshot.as_ref().map(|s| s.plan.clone()).unwrap_or_else(|| "pro".to_string());
             let snapshot = UsageSnapshot {
                 five_hour_utilization: 0,
                 seven_day_utilization: 0,
                 seven_day_sonnet_utilization: None,
                 five_hour_reset_in: None,
                 seven_day_reset_in: None,
-                plan: "unknown".to_string(),
+                plan: plan.clone(),
                 last_updated: chrono::Local::now().to_rfc3339(),
                 status: "unauthenticated".to_string(),
                 error_message: Some("Please log in to Claude Code in your terminal, or enter a custom token in Settings.".to_string()),
@@ -206,13 +207,14 @@ async fn perform_poll(app_handle: &AppHandle, state_lock: &Arc<Mutex<PollingStat
         FetchResult::AuthExpired(err) => {
             log_msg("error", &format!("Authentication expired: {}", err));
             
+            let plan = state.current_snapshot.as_ref().map(|s| s.plan.clone()).unwrap_or_else(|| "pro".to_string());
             let snapshot = UsageSnapshot {
                 five_hour_utilization: 0,
                 seven_day_utilization: 0,
                 seven_day_sonnet_utilization: None,
                 five_hour_reset_in: None,
                 seven_day_reset_in: None,
-                plan: "unknown".to_string(),
+                plan: plan.clone(),
                 last_updated: chrono::Local::now().to_rfc3339(),
                 status: "unauthenticated".to_string(),
                 error_message: Some("Claude OAuth session expired. Please reauthenticate via terminal or enter a new token in Settings.".to_string()),
@@ -229,13 +231,14 @@ async fn perform_poll(app_handle: &AppHandle, state_lock: &Arc<Mutex<PollingStat
             log_msg("warn", &format!("Rate limited: {}", err));
             state.consecutive_failures += 1;
             
+            let plan = state.current_snapshot.as_ref().map(|s| s.plan.clone()).unwrap_or_else(|| "pro".to_string());
             let snapshot = UsageSnapshot {
                 five_hour_utilization: state.current_snapshot.as_ref().map(|s| s.five_hour_utilization).unwrap_or(0),
                 seven_day_utilization: state.current_snapshot.as_ref().map(|s| s.seven_day_utilization).unwrap_or(0),
                 seven_day_sonnet_utilization: state.current_snapshot.as_ref().and_then(|s| s.seven_day_sonnet_utilization),
                 five_hour_reset_in: None,
                 seven_day_reset_in: None,
-                plan: "unknown".to_string(),
+                plan: plan.clone(),
                 last_updated: chrono::Local::now().to_rfc3339(),
                 status: "rate_limited".to_string(),
                 error_message: Some("Rate limited by Anthropic. Retrying with backoff...".to_string()),
@@ -252,13 +255,14 @@ async fn perform_poll(app_handle: &AppHandle, state_lock: &Arc<Mutex<PollingStat
             state.consecutive_failures += 1;
 
             if state.consecutive_failures >= 3 {
+                let plan = state.current_snapshot.as_ref().map(|s| s.plan.clone()).unwrap_or_else(|| "pro".to_string());
                 let snapshot = UsageSnapshot {
                     five_hour_utilization: state.current_snapshot.as_ref().map(|s| s.five_hour_utilization).unwrap_or(0),
                     seven_day_utilization: state.current_snapshot.as_ref().map(|s| s.seven_day_utilization).unwrap_or(0),
                     seven_day_sonnet_utilization: state.current_snapshot.as_ref().and_then(|s| s.seven_day_sonnet_utilization),
                     five_hour_reset_in: None,
                     seven_day_reset_in: None,
-                    plan: "unknown".to_string(),
+                    plan: plan.clone(),
                     last_updated: chrono::Local::now().to_rfc3339(),
                     status: "offline".to_string(),
                     error_message: Some(format!("Offline: {}", err)),

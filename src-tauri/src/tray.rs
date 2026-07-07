@@ -29,9 +29,18 @@ pub fn update_tray_menu_text(app: &AppHandle, snapshot: &UsageSnapshot) {
     // Set dynamic status bar title (macOS only, safe cross-platform)
     if let Some(tray) = app.tray_by_id("main") {
         let reset_5h = snapshot.five_hour_reset_in.as_deref().unwrap_or("N/A");
-        let title = format!("⟳ {} ({}%) | Weekly ({}%)", 
-            reset_5h, 
-            snapshot.five_hour_utilization, 
+        let session_label = if reset_5h == "N/A" || reset_5h.is_empty() {
+            "Session"
+        } else {
+            reset_5h
+        };
+        // Multi-line formatting for clean macOS menu bar integration:
+        // Line 1: Session / 3h 37m | Weekly
+        // Line 2:       48%        |   27%
+        let title = format!(
+            "{} | Weekly\n  {}%   |  {}%",
+            session_label,
+            snapshot.five_hour_utilization,
             snapshot.seven_day_utilization
         );
         let _ = tray.set_title(Some(title));

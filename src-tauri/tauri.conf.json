@@ -24,7 +24,7 @@
         "label": "popup",
         "title": "Claudee Tracky Popup",
         "width": 320,
-        "height": 520,
+        "height": 330,
         "resizable": false,
         "decorations": false,
         "transparent": true,

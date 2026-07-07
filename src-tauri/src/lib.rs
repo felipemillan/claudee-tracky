@@ -44,6 +44,7 @@ pub fn run() {
             commands::export_history_to_csv,
             commands::open_dashboard_window,
             commands::hide_popup,
+            commands::get_claude_cli_analytics,
         ])
         .setup(move |app| {
             let app_handle = app.app_handle().clone();

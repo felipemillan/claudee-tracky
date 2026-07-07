@@ -5,7 +5,6 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   BarChart3,
   RotateCw,
-  Settings as SettingsIcon,
   Info,
   Power,
   ShieldAlert
@@ -88,12 +87,8 @@ export const Popup: React.FC = () => {
 
   const fiveHour = snapshot?.five_hour_utilization ?? 0;
   const sevenDay = snapshot?.seven_day_utilization ?? 0;
-  const sonnet = snapshot?.seven_day_sonnet_utilization ?? 0;
-  const plan = snapshot?.plan ?? "pro";
+  const plan = snapshot?.plan && snapshot.plan !== "unknown" ? snapshot.plan : "pro";
   const status = snapshot?.status ?? "unauthenticated";
-  const spendUsed = snapshot?.spend_used ?? 0;
-  const spendLimit = snapshot?.spend_limit ?? 100.0;
-  const spendPercent = snapshot?.spend_percent ?? 0;
 
   // The progress bar color — warm coral/orange matching the reference
   const barColor = "#d4764e";
@@ -124,7 +119,7 @@ export const Popup: React.FC = () => {
         background: "#2c2c2e",
         borderRadius: 12,
         border: "1px solid rgba(255,255,255,0.08)",
-        padding: "16px 18px 12px 18px",
+        padding: "16px 18px 24px 18px", // Added 24px bottom padding for extra spacing
         color: "#e5e5e5",
         fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif",
         fontSize: 13,
@@ -187,29 +182,6 @@ export const Popup: React.FC = () => {
               </div>
             </div>
 
-            {/* Sonnet */}
-            <div>
-              <div style={{ fontWeight: 700, fontSize: 14, color: "#f5f5f5", marginBottom: 6 }}>Sonnet</div>
-              <div style={{ width: "100%", height: 5, borderRadius: 3, background: trackColor, overflow: "hidden" }}>
-                <div style={{ width: `${sonnet}%`, height: "100%", borderRadius: 3, background: barColor, transition: "width 0.5s ease" }} />
-              </div>
-              <div style={{ fontSize: 11, color: "#8e8e93", marginTop: 4 }}>
-                {sonnet}% used
-              </div>
-            </div>
-
-            {/* Extra usage */}
-            <div>
-              <div style={{ fontWeight: 700, fontSize: 14, color: "#f5f5f5", marginBottom: 6 }}>Extra usage</div>
-              <div style={{ width: "100%", height: 5, borderRadius: 3, background: trackColor, overflow: "hidden" }}>
-                <div style={{ width: `${spendPercent}%`, height: "100%", borderRadius: 3, background: barColor, transition: "width 0.5s ease" }} />
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#8e8e93", marginTop: 4 }}>
-                <span>This month: ${spendUsed.toFixed(2)} / ${spendLimit.toFixed(2)}</span>
-                <span>{spendPercent}% used</span>
-              </div>
-            </div>
-
           </div>
         )}
 
@@ -220,7 +192,6 @@ export const Popup: React.FC = () => {
         <div style={{ display: "flex", flexDirection: "column" as const, gap: 1 }}>
           <MenuItem icon={<BarChart3 style={{ width: 16, height: 16 }} />} label="Open Dashboard" onClick={handleOpenDashboard} />
           <MenuItem icon={<RotateCw style={{ width: 16, height: 16, ...(isRefreshing ? { animation: "spin 1s linear infinite" } : {}) }} />} label="Refresh" onClick={() => forceRefresh()} disabled={isRefreshing} />
-          <MenuItem icon={<SettingsIcon style={{ width: 16, height: 16 }} />} label="Settings..." onClick={handleOpenDashboard} />
           <MenuItem icon={<Info style={{ width: 16, height: 16 }} />} label="About Claude Usage Menu" onClick={handleOpenClaude} />
         </div>
 
