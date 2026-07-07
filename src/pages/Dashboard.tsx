@@ -458,6 +458,38 @@ export const Dashboard: React.FC = () => {
                 </div>
               </div>
 
+              {/* Antigravity (Gemini) details */}
+              {snapshot?.antigravity_quota && (
+                <div className="rounded-xl p-5 space-y-5" style={{ backgroundColor: "var(--card-bg-color)", border: "1px solid var(--border-color)" }}>
+                  <div className="flex justify-between items-center pb-2 mb-2" style={{ borderBottom: "1px solid var(--border-color)" }}>
+                    <h3 className="font-bold text-xs uppercase tracking-wider text-zinc-400" style={{ color: "var(--text-secondary)" }}>
+                      Antigravity Model Quotas
+                    </h3>
+                    <span className="text-[10px] font-mono text-zinc-500" style={{ color: "var(--text-secondary)" }}>
+                      {snapshot.antigravity_quota.email}
+                    </span>
+                  </div>
+
+                  {snapshot.antigravity_quota.models.map((model) => (
+                    <div key={model.model_id} className="space-y-2">
+                      <div className="flex justify-between text-xs font-semibold">
+                        <span>{model.label}</span>
+                        <span className="font-mono">{model.used_percent}% used</span>
+                      </div>
+                      <div className="w-full h-2.5 rounded-full overflow-hidden" style={{ backgroundColor: "var(--divider-color)" }}>
+                        <div 
+                          className="h-full rounded-full transition-all duration-500"
+                          style={{ width: `${model.used_percent}%`, backgroundColor: "var(--accent-color)" }}
+                        />
+                      </div>
+                      <div className="text-[10px] text-zinc-500 font-mono text-right" style={{ color: "var(--text-secondary)" }}>
+                        Resets in: {model.time_until_reset ?? "N/A"}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {/* Action shortcuts */}
               <div className="flex gap-4">
                 <button

@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::mpsc;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 use crate::config::{log_msg, append_history, load_settings};
 use crate::network::{fetch_usage_data, FetchResult, UsageSnapshot};
 
@@ -87,6 +87,9 @@ async fn perform_poll(app_handle: &AppHandle, state_lock: &Arc<Mutex<PollingStat
     }
     let _ = app_handle.emit("refresh-state-changed", true);
 
+    // Fetch Antigravity quota alongside
+    let antigravity_quota = crate::antigravity::fetch_antigravity_quota().await;
+
     // 2. Fetch config settings
     let settings = load_settings(app_handle);
 
@@ -119,6 +122,7 @@ async fn perform_poll(app_handle: &AppHandle, state_lock: &Arc<Mutex<PollingStat
                 spend_used: 0.0,
                 spend_limit: 100.0,
                 spend_percent: 0,
+                antigravity_quota: antigravity_quota.clone(),
             };
             
             state.current_snapshot = Some(snapshot.clone());
@@ -177,6 +181,7 @@ async fn perform_poll(app_handle: &AppHandle, state_lock: &Arc<Mutex<PollingStat
                 spend_used,
                 spend_limit,
                 spend_percent,
+                antigravity_quota: antigravity_quota.clone(),
             };
 
             // Update state
@@ -221,6 +226,7 @@ async fn perform_poll(app_handle: &AppHandle, state_lock: &Arc<Mutex<PollingStat
                 spend_used: 0.0,
                 spend_limit: 100.0,
                 spend_percent: 0,
+                antigravity_quota: antigravity_quota.clone(),
             };
 
             state.current_snapshot = Some(snapshot.clone());
@@ -245,6 +251,7 @@ async fn perform_poll(app_handle: &AppHandle, state_lock: &Arc<Mutex<PollingStat
                 spend_used: state.current_snapshot.as_ref().map(|s| s.spend_used).unwrap_or(0.0),
                 spend_limit: state.current_snapshot.as_ref().map(|s| s.spend_limit).unwrap_or(100.0),
                 spend_percent: state.current_snapshot.as_ref().map(|s| s.spend_percent).unwrap_or(0),
+                antigravity_quota: antigravity_quota.clone(),
             };
 
             state.current_snapshot = Some(snapshot.clone());
@@ -269,6 +276,7 @@ async fn perform_poll(app_handle: &AppHandle, state_lock: &Arc<Mutex<PollingStat
                     spend_used: state.current_snapshot.as_ref().map(|s| s.spend_used).unwrap_or(0.0),
                     spend_limit: state.current_snapshot.as_ref().map(|s| s.spend_limit).unwrap_or(100.0),
                     spend_percent: state.current_snapshot.as_ref().map(|s| s.spend_percent).unwrap_or(0),
+                    antigravity_quota: antigravity_quota.clone(),
                 };
 
                 state.current_snapshot = Some(snapshot.clone());

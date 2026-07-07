@@ -47,6 +47,7 @@ pub struct UsageSnapshot {
     pub spend_used: f64,
     pub spend_limit: f64,
     pub spend_percent: u32,
+    pub antigravity_quota: Option<crate::antigravity::AntigravityQuotaSnapshot>,
 }
 
 pub enum FetchResult {

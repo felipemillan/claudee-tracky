@@ -5,6 +5,7 @@ mod polling;
 mod notifications;
 mod commands;
 mod tray;
+pub mod antigravity;
 
 use tokio::sync::mpsc;
 use tauri::{Manager, RunEvent, Listener};
@@ -46,7 +47,10 @@ pub fn run() {
             commands::hide_popup,
             commands::get_claude_cli_analytics,
         ])
-        .setup(move |app| {
+        .setup(|app| {
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
             let app_handle = app.app_handle().clone();
 
             // Create system tray
@@ -108,6 +112,7 @@ pub fn run() {
                         spend_used: 0.0,
                         spend_limit: 100.0,
                         spend_percent: 0,
+                        antigravity_quota: None,
                     };
                     state.current_snapshot = Some(snapshot.clone());
                     // Sync initial tray status bar text

@@ -126,7 +126,7 @@ export const Popup: React.FC = () => {
         display: "flex",
         flexDirection: "column" as const,
         gap: 0,
-        overflow: "hidden",
+        overflowY: "auto",
         userSelect: "none" as const,
         height: "calc(100% - 8px)",
       }}>
@@ -181,6 +181,39 @@ export const Popup: React.FC = () => {
                 <span>Resets in {snapshot?.seven_day_reset_in ?? "N/A"}</span>
               </div>
             </div>
+
+            {/* Antigravity Quota Section */}
+            {snapshot?.antigravity_quota ? (
+              <div style={{ display: "flex", flexDirection: "column" as const, gap: 12 }}>
+                <div style={{ height: 1, background: "rgba(255,255,255,0.06)" }} />
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: "#f5f5f5" }}>Antigravity</div>
+                    <div style={{ fontSize: 10, color: "#8e8e93", marginTop: 1 }}>
+                      {snapshot.antigravity_quota.email}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: "#8e8e93", textTransform: "uppercase" as const, letterSpacing: 0.5 }}>
+                    Gemini
+                  </div>
+                </div>
+
+                {snapshot.antigravity_quota.models.map((model) => (
+                  <div key={model.model_id}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: "#f5f5f5", marginBottom: 6 }}>
+                      {model.label}
+                    </div>
+                    <div style={{ width: "100%", height: 5, borderRadius: 3, background: trackColor, overflow: "hidden" }}>
+                      <div style={{ width: `${model.used_percent}%`, height: "100%", borderRadius: 3, background: barColor, transition: "width 0.5s ease" }} />
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#8e8e93", marginTop: 4 }}>
+                      <span>{model.used_percent}% used</span>
+                      <span>Resets in {model.time_until_reset ?? "N/A"}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
 
           </div>
         )}
