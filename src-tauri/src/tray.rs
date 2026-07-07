@@ -8,7 +8,6 @@ use crate::network::UsageSnapshot;
 /// Sets up the system tray and its click listeners.
 pub fn create_tray(app: &AppHandle) -> Result<(), tauri::Error> {
     let _tray = TrayIconBuilder::with_id("main")
-        .icon(app.default_window_icon().unwrap().clone())
         .on_tray_icon_event(|tray, event| {
             // IMPORTANT: Only handle mouse-UP to prevent double-fire
             // (macOS sends Click for both Down and Up states)
