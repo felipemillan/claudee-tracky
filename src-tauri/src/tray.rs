@@ -26,7 +26,6 @@ pub fn create_tray(app: &AppHandle) -> Result<(), tauri::Error> {
 
 /// Dynamically updates the tray menu items text to reflect the latest usage data.
 pub fn update_tray_menu_text(app: &AppHandle, snapshot: &UsageSnapshot) {
-    // Set dynamic status bar title (macOS only, safe cross-platform)
     if let Some(tray) = app.tray_by_id("main") {
         let reset_5h = snapshot.five_hour_reset_in.as_deref().unwrap_or("N/A");
         let session_label = if reset_5h == "N/A" || reset_5h.is_empty() {
@@ -34,11 +33,9 @@ pub fn update_tray_menu_text(app: &AppHandle, snapshot: &UsageSnapshot) {
         } else {
             reset_5h
         };
-        // Multi-line formatting for clean macOS menu bar integration:
-        // Line 1: Session / 3h 37m | Weekly
-        // Line 2:       48%        |   27%
+        // Single-line side-by-side formatting (no refresh icon)
         let title = format!(
-            "{} | Weekly\n  {}%   |  {}%",
+            "{} ({}%) | Weekly ({}%)",
             session_label,
             snapshot.five_hour_utilization,
             snapshot.seven_day_utilization
