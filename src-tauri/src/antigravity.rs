@@ -135,43 +135,6 @@ fn format_reset_time_str(resets_at_str: &str) -> Option<String> {
     }
 }
 
-async fn refresh_google_token(refresh_token: &str) -> Result<(String, u64), String> {
-    let client = reqwest::Client::new();
-    let client_id = format!("{}-{}", "1071006060591", "tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com");
-    let client_secret = format!("{}-{}", "GOCSPX", "K58FWR486LdLJ1mLB8sXC4z6qDAf");
-    let params = [
-        ("client_id", client_id.as_str()),
-        ("client_secret", client_secret.as_str()),
-        ("refresh_token", refresh_token),
-        ("grant_type", "refresh_token"),
-    ];
-    let res = client.post("https://oauth2.googleapis.com/token")
-        .form(&params)
-        .send()
-        .await
-        .map_err(|e| format!("Failed to send refresh request: {}", e))?;
-        
-    if !res.status().is_success() {
-        let err_text = res.text().await.unwrap_or_default();
-        return Err(format!("Google OAuth token refresh failed: {}", err_text));
-    }
-    
-    #[derive(Deserialize)]
-    struct RefreshResponse {
-        access_token: String,
-        expires_in: u64,
-    }
-    
-    let resp: RefreshResponse = res.json()
-        .await
-        .map_err(|e| format!("Failed to parse refresh response: {}", e))?;
-        
-    let now_ms = chrono::Utc::now().timestamp_millis() as u64;
-    let new_expiry = now_ms + (resp.expires_in * 1000);
-    
-    Ok((resp.access_token, new_expiry))
-}
-
 async fn get_google_creds() -> Result<(String, String, String, u64, String), String> {
     let home = dirs::home_dir().ok_or("Cannot find home directory")?;
     
@@ -196,29 +159,8 @@ async fn get_google_creds() -> Result<(String, String, String, u64, String), Str
     let content = fs::read_to_string(&creds_path)
         .map_err(|e| format!("Failed to read oauth_creds.json: {}", e))?;
         
-    let mut creds: GoogleOAuthCreds = serde_json::from_str(&content)
+    let creds: GoogleOAuthCreds = serde_json::from_str(&content)
         .map_err(|e| format!("Failed to parse oauth_creds.json: {}", e))?;
-        
-    let now_ms = chrono::Utc::now().timestamp_millis() as u64;
-    // Check if token is close to expiry (within 5 minutes)
-    if creds.expiry_date <= now_ms + 300_000 {
-        log_msg("info", "Google OAuth token expired or expiring soon. Refreshing...");
-        match refresh_google_token(&creds.refresh_token).await {
-            Ok((new_token, new_expiry)) => {
-                creds.access_token = new_token;
-                creds.expiry_date = new_expiry;
-                
-                // Save back to oauth_creds.json
-                if let Ok(new_content) = serde_json::to_string_pretty(&creds) {
-                    let _ = fs::write(&creds_path, new_content);
-                }
-                log_msg("info", "Google OAuth token refreshed successfully.");
-            }
-            Err(e) => {
-                log_msg("warn", &format!("Google OAuth token refresh failed, attempting to use cached token: {}", e));
-            }
-        }
-    }
     
     Ok((
         creds.access_token,
@@ -240,28 +182,93 @@ pub async fn fetch_antigravity_quota() -> Option<AntigravityQuotaSnapshot> {
 }
 
 async fn fetch_antigravity_quota_inner() -> Result<AntigravityQuotaSnapshot, String> {
-    // 1. Get local OAuth creds
+    let home = dirs::home_dir().ok_or("Cannot find home directory")?;
+    
+    // 1. Load local OAuth creds for fallback and email extraction
     let (access_token, refresh_token, token_type, expiry_sec, email) = get_google_creds().await?;
     
-    // 2. Allocate free port
+    // 2. Try to query already running servers (spawned by Antigravity IDE)
+    let running_servers = get_running_servers();
+    log_msg("debug", &format!("Found {} running Antigravity language server processes.", running_servers.len()));
+    
+    for server in running_servers {
+        log_msg("debug", &format!("Attempting to query running server (PID {}) on ports {:?}", server.pid, server.ports));
+        for port in server.ports {
+            let status_url = format!("https://127.0.0.1:{}/exa.language_server_pb.LanguageServerService/GetUserStatus", port);
+            let extension_path = "/Applications/Antigravity IDE.app/Contents/Resources/app/extensions/antigravity";
+            let status_payload = serde_json::json!({
+                "metadata": {
+                    "ideName": "antigravity",
+                    "locale": "en-US",
+                    "os": "macOS",
+                    "ideVersion": "0.0.0",
+                    "extensionName": "google.antigravity",
+                    "extensionPath": extension_path,
+                    "deviceFingerprint": "usagewatcher",
+                    "triggerId": "menubar"
+                }
+            });
+            
+            let client = match reqwest::Client::builder()
+                .danger_accept_invalid_certs(true)
+                .timeout(Duration::from_millis(800))
+                .build()
+            {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            
+            let res = client.post(&status_url)
+                .header("Content-Type", "application/json")
+                .header("Connect-Protocol-Version", "1")
+                .header("x-codeium-csrf-token", &server.csrf_token)
+                .json(&status_payload)
+                .send()
+                .await;
+                
+            if let Ok(response) = res {
+                let status_code = response.status();
+                if status_code.is_success() {
+                    if let Ok(body_text) = response.text().await {
+                        if let Ok(parsed) = serde_json::from_str::<GetUserStatusResponse>(&body_text) {
+                            let config_data = parsed.cascade_model_config_data
+                                .as_ref()
+                                .or(parsed.user_status.as_ref().and_then(|us| us.cascade_model_config_data.as_ref()));
+                            if let Some(cfg) = config_data {
+                                if cfg.client_model_configs.is_some() {
+                                    log_msg("info", &format!("Successfully retrieved quota from running server PID {} on port {}", server.pid, port));
+                                    return parse_user_status_response(parsed, email);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    log_msg("info", "No active running language server returned valid quota config. Spawning fallback instance...");
+    
+    // 3. Fallback: Spawning language server
     let port = find_free_port().ok_or("No free TCP port available")?;
     let csrf_token = format!("{:x}", chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0));
     
-    // 3. Spawning language server
     let ls_path = "/Applications/Antigravity IDE.app/Contents/Resources/app/extensions/antigravity/bin/language_server_macos_arm";
     if !std::path::Path::new(ls_path).exists() {
         return Err("Antigravity IDE language server binary not found".to_string());
     }
     
-    let home = dirs::home_dir().ok_or("Cannot find home directory")?;
     let gemini_dir = home.join(".gemini").to_string_lossy().to_string();
     
     log_msg("debug", &format!("Spawning Antigravity language server on port {}...", port));
     
+    let log_file = fs::File::create(home.join(".gemini").join("antigravity_ls.log"))
+        .map_err(|e| format!("Failed to create LS log file: {}", e))?;
+    let err_file = log_file.try_clone().unwrap();
+
     let mut child = Command::new(ls_path)
-        .arg("-server_port")
+        .arg("-https_server_port")
         .arg(port.to_string())
-        .arg("-random_port=false")
         .arg("-enable_lsp=false")
         .arg("-csrf_token")
         .arg(&csrf_token)
@@ -272,8 +279,8 @@ async fn fetch_antigravity_quota_inner() -> Result<AntigravityQuotaSnapshot, Str
         .arg("-app_data_dir")
         .arg("antigravity-ide")
         .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdout(Stdio::from(log_file))
+        .stderr(Stdio::from(err_file))
         .spawn()
         .map_err(|e| format!("Failed to spawn language server process: {}", e))?;
         
@@ -293,29 +300,27 @@ async fn fetch_antigravity_quota_inner() -> Result<AntigravityQuotaSnapshot, Str
         
     let get_status_url = format!("https://127.0.0.1:{}/exa.language_server_pb.LanguageServerService/GetStatus", port);
     let mut ready = false;
-    for _ in 0..60 {
-        if let Ok(Some(status)) = child.try_wait() {
-            return Err(format!("Language server exited early with status: {}", status));
-        }
-        
+    for _ in 0..15 {
         let res = client.post(&get_status_url)
             .header("Content-Type", "application/json")
             .header("Connect-Protocol-Version", "1")
             .header("x-codeium-csrf-token", &csrf_token)
-            .body("{}")
+            .json(&serde_json::json!({}))
             .send()
             .await;
             
-        if res.is_ok() {
-            ready = true;
-            break;
+        if let Ok(resp) = res {
+            if resp.status().is_success() {
+                ready = true;
+                break;
+            }
         }
-        sleep(Duration::from_millis(50)).await;
+        sleep(Duration::from_millis(150)).await;
     }
     
     if !ready {
         let _ = child.kill();
-        return Err("Language server failed to become ready in time".to_string());
+        return Err("Language server failed to respond on GetStatus".to_string());
     }
     
     // 5. Send SaveOAuthTokenInfo
@@ -346,7 +351,7 @@ async fn fetch_antigravity_quota_inner() -> Result<AntigravityQuotaSnapshot, Str
         return Err(format!("Failed to save OAuth token info: {}", e));
     }
     
-    // 6. GetUserStatus
+    // 6. GetUserStatus with retry loop
     let status_url = format!("https://127.0.0.1:{}/exa.language_server_pb.LanguageServerService/GetUserStatus", port);
     let extension_path = "/Applications/Antigravity IDE.app/Contents/Resources/app/extensions/antigravity";
     let status_payload = serde_json::json!({
@@ -363,37 +368,131 @@ async fn fetch_antigravity_quota_inner() -> Result<AntigravityQuotaSnapshot, Str
         }
     });
     
-    let res = client.post(&status_url)
-        .header("Content-Type", "application/json")
-        .header("Connect-Protocol-Version", "1")
-        .header("x-codeium-csrf-token", &csrf_token)
-        .json(&status_payload)
-        .send()
-        .await;
-        
-    let response = match res {
-        Ok(r) => r,
-        Err(e) => {
-            let _ = child.kill();
-            return Err(format!("Failed to get user status: {}", e));
-        }
-    };
+    let mut status_data: Option<GetUserStatusResponse> = None;
+    let mut last_err = String::new();
     
-    let status_code = response.status();
-    let body_text = response.text().await.map_err(|e| format!("Failed to read body: {}", e))?;
+    for attempt in 1..=20 {
+        let res = client.post(&status_url)
+            .header("Content-Type", "application/json")
+            .header("Connect-Protocol-Version", "1")
+            .header("x-codeium-csrf-token", &csrf_token)
+            .json(&status_payload)
+            .send()
+            .await;
+            
+        let response = match res {
+            Ok(r) => r,
+            Err(e) => {
+                last_err = format!("Failed to send GetUserStatus: {}", e);
+                sleep(Duration::from_millis(200)).await;
+                continue;
+            }
+        };
+        
+        let status_code = response.status();
+        let body_text = response.text().await.unwrap_or_default();
+        
+        if status_code.is_success() {
+            match serde_json::from_str::<GetUserStatusResponse>(&body_text) {
+                Ok(parsed) => {
+                    status_data = Some(parsed);
+                    break;
+                }
+                Err(e) => {
+                    last_err = format!("Failed to parse response JSON: {}. Body: {}", e, body_text);
+                }
+            }
+        } else {
+            last_err = format!("HTTP {}: {}", status_code, body_text);
+            if body_text.contains("GetCascadeModelConfigData() is nil") {
+                log_msg("debug", &format!("Language server still loading Cascade Model Config from Google (attempt {}/20)...", attempt));
+            }
+        }
+        sleep(Duration::from_millis(200)).await;
+    }
     
     // Shutdown server
     let _ = child.kill();
     let _ = child.wait();
     
-    if !status_code.is_success() {
-        return Err(format!("GetUserStatus returned error: (status: {}, body: {})", status_code, body_text));
+    let status_data = status_data.ok_or_else(|| format!("GetUserStatus failed. Last error: {}", last_err))?;
+    parse_user_status_response(status_data, email)
+}
+
+struct RunningServer {
+    pid: String,
+    csrf_token: String,
+    ports: Vec<u16>,
+}
+
+fn get_running_servers() -> Vec<RunningServer> {
+    let mut servers = Vec::new();
+    
+    let output = match Command::new("ps")
+        .args(&["-ww", "-ax", "-o", "pid,command"])
+        .output()
+    {
+        Ok(out) => String::from_utf8_lossy(&out.stdout).into_owned(),
+        Err(_) => return servers,
+    };
+    
+    for line in output.lines() {
+        if line.contains("language_server_macos_arm") && line.contains("--csrf_token") {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() < 2 {
+                continue;
+            }
+            let pid = parts[0].to_string();
+            
+            let cmdline = parts[1..].join(" ");
+            let token_prefix = "--csrf_token";
+            if let Some(pos) = cmdline.find(token_prefix) {
+                let sub = &cmdline[pos + token_prefix.len()..];
+                if let Some(token) = sub.split_whitespace().next() {
+                    let ports = get_ports_for_pid(&pid);
+                    servers.push(RunningServer {
+                        pid,
+                        csrf_token: token.to_string(),
+                        ports,
+                    });
+                }
+            }
+        }
     }
     
-    // 7. Parse response
-    let status_data: GetUserStatusResponse = serde_json::from_str(&body_text)
-        .map_err(|e| format!("Failed to parse GetUserStatus response JSON: {}", e))?;
-        
+    servers
+}
+
+fn get_ports_for_pid(pid: &str) -> Vec<u16> {
+    let mut ports = Vec::new();
+    
+    let output = match Command::new("lsof")
+        .args(&["-a", "-i", "-P", "-n", "-p", pid])
+        .output()
+    {
+        Ok(out) => String::from_utf8_lossy(&out.stdout).into_owned(),
+        Err(_) => return ports,
+    };
+    
+    for line in output.lines() {
+        if line.contains("(LISTEN)") {
+            if let Some(pos) = line.find("127.0.0.1:") {
+                let sub = &line[pos + "127.0.0.1:".len()..];
+                if let Some(port_str) = sub.split_whitespace().next() {
+                    if let Ok(port) = port_str.parse::<u16>() {
+                        if !ports.contains(&port) {
+                            ports.push(port);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    ports
+}
+
+fn parse_user_status_response(status_data: GetUserStatusResponse, email: String) -> Result<AntigravityQuotaSnapshot, String> {
     let config_data = status_data.cascade_model_config_data
         .or_else(|| status_data.user_status.and_then(|us| us.cascade_model_config_data))
         .ok_or_else(|| "Missing cascadeModelConfigData in GetUserStatus response".to_string())?;
@@ -403,7 +502,6 @@ async fn fetch_antigravity_quota_inner() -> Result<AntigravityQuotaSnapshot, Str
         for config in configs {
             let label = config.label.unwrap_or_else(|| "Unknown Gemini Model".to_string());
             
-            // Skip model configs that don't have quota info
             let quota = match config.quota_info {
                 Some(q) => q,
                 None => continue,
