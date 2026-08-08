@@ -14,6 +14,12 @@ pub struct Settings {
     pub minimize_to_tray: bool,
     pub notifications_enabled: bool,
     pub custom_token: Option<String>,
+    #[serde(default = "default_menu_bar_mode")]
+    pub menu_bar_mode: String, // "full" | "compact" | "icon_only"
+}
+
+fn default_menu_bar_mode() -> String {
+    "full".to_string()
 }
 
 impl Default for Settings {
@@ -26,6 +32,7 @@ impl Default for Settings {
             minimize_to_tray: true,
             notifications_enabled: true,
             custom_token: None,
+            menu_bar_mode: default_menu_bar_mode(),
         }
     }
 }

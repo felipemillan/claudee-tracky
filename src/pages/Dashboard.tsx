@@ -69,6 +69,7 @@ export const Dashboard: React.FC = () => {
   const [formMinimize, setFormMinimize] = useState(true);
   const [formNotifyEnabled, setFormNotifyEnabled] = useState(true);
   const [formCustomToken, setFormCustomToken] = useState("");
+  const [formMenuBarMode, setFormMenuBarMode] = useState<"full" | "compact" | "icon_only">("full");
 
   const [saveSuccess, setSaveSuccess] = useState(false);
 
@@ -94,6 +95,7 @@ export const Dashboard: React.FC = () => {
       setFormMinimize(s.minimize_to_tray);
       setFormNotifyEnabled(s.notifications_enabled);
       setFormCustomToken(s.custom_token || "");
+      setFormMenuBarMode(s.menu_bar_mode || "full");
     });
     fetchHistory();
     fetchCurrentState();
@@ -155,7 +157,8 @@ export const Dashboard: React.FC = () => {
         autostart: formAutostart,
         minimize_to_tray: formMinimize,
         notifications_enabled: formNotifyEnabled,
-        custom_token: formCustomToken.trim() === "" ? null : formCustomToken.trim()
+        custom_token: formCustomToken.trim() === "" ? null : formCustomToken.trim(),
+        menu_bar_mode: formMenuBarMode
       });
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
@@ -895,6 +898,33 @@ export const Dashboard: React.FC = () => {
                 </div>
               </div>
 
+              {/* SECTION: MENU BAR */}
+              <div className="rounded-xl p-5 space-y-4" style={{ backgroundColor: "var(--card-bg-color)", border: "1px solid var(--border-color)" }}>
+                <h3 className="font-bold text-xs uppercase tracking-wider pb-2 mb-3" style={{ borderBottom: "1px solid var(--border-color)", color: "var(--text-secondary)" }}>Menu Bar Display</h3>
+                <div className="flex gap-4">
+                  {[
+                    { id: "full", label: "Full", preview: "4h 44m (1%) | Weekly (6%)" },
+                    { id: "compact", label: "Compact", preview: "4:44(1%)|W 6%" },
+                    { id: "icon_only", label: "Icon Only", preview: "icon glyph only" }
+                  ].map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setFormMenuBarMode(m.id as any)}
+                      className="flex flex-col items-start gap-1 px-4 py-2 border rounded-lg text-xs font-semibold transition-all cursor-pointer"
+                      style={
+                        formMenuBarMode === m.id
+                          ? { backgroundColor: "var(--accent-color)", borderColor: "var(--accent-color)", color: "#fff" }
+                          : { backgroundColor: "var(--background-color)", borderColor: "var(--border-color)", color: "var(--text-secondary)" }
+                      }
+                    >
+                      {m.label}
+                      <span className="text-[10px] font-mono font-normal opacity-80">{m.preview}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* SECTION: APPEARANCE */}
               <div className="rounded-xl p-5 space-y-4" style={{ backgroundColor: "var(--card-bg-color)", border: "1px solid var(--border-color)" }}>
                 <h3 className="font-bold text-xs uppercase tracking-wider pb-2 mb-3" style={{ borderBottom: "1px solid var(--border-color)", color: "var(--text-secondary)" }}>Theme</h3>
@@ -935,6 +965,7 @@ export const Dashboard: React.FC = () => {
                       setFormMinimize(true);
                       setFormNotifyEnabled(true);
                       setFormCustomToken("");
+                      setFormMenuBarMode("full");
                     }
                   }}
                   className="px-4 py-2 border text-xs font-semibold rounded-lg hover:opacity-85 transition-all cursor-pointer"

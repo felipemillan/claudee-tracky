@@ -6,6 +6,7 @@ export interface Settings {
   minimize_to_tray: boolean;
   notifications_enabled: boolean;
   custom_token: string | null;
+  menu_bar_mode: "full" | "compact" | "icon_only";
 }
 
 export interface AntigravityModelQuota {

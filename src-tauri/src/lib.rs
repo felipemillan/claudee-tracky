@@ -88,7 +88,8 @@ pub fn run() {
             let app_handle_for_events = app_handle.clone();
             app_handle.listen("usage-updated", move |event| {
                 if let Ok(snapshot) = serde_json::from_str::<network::UsageSnapshot>(event.payload()) {
-                    tray::update_tray_menu_text(&app_handle_for_events, &snapshot);
+                    let mode = config::load_settings(&app_handle_for_events).menu_bar_mode;
+                    tray::update_tray_menu_text(&app_handle_for_events, &snapshot, &mode);
                 }
             });
 
@@ -116,7 +117,7 @@ pub fn run() {
                     };
                     state.current_snapshot = Some(snapshot.clone());
                     // Sync initial tray status bar text
-                    tray::update_tray_menu_text(&app_handle, &snapshot);
+                    tray::update_tray_menu_text(&app_handle, &snapshot, &settings.menu_bar_mode);
                 }
             }
 

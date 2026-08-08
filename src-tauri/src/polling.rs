@@ -9,6 +9,30 @@ pub struct PollingState {
     pub current_snapshot: Option<UsageSnapshot>,
     pub consecutive_failures: u32,
     pub is_refreshing: bool,
+    pub cached_oauth: Option<crate::keychain::ClaudeAiOauth>,
+    pub cached_oauth_at: Option<std::time::Instant>,
+}
+
+/// How long a keychain-sourced credential stays cached before we ask the OS again.
+const OAUTH_CACHE_TTL: Duration = Duration::from_secs(300);
+
+/// Returns cached OAuth credentials if still fresh, otherwise hits the keychain once and caches the result.
+fn get_cached_oauth(state: &mut PollingState) -> Result<crate::keychain::ClaudeAiOauth, String> {
+    let is_fresh = state.cached_oauth.is_some()
+        && state.cached_oauth_at.map(|t| t.elapsed() < OAUTH_CACHE_TTL).unwrap_or(false);
+
+    if is_fresh {
+        return Ok(state.cached_oauth.clone().unwrap());
+    }
+
+    match crate::keychain::get_token_from_keychain() {
+        Ok(oauth) => {
+            state.cached_oauth = Some(oauth.clone());
+            state.cached_oauth_at = Some(std::time::Instant::now());
+            Ok(oauth)
+        }
+        Err(e) => Err(e),
+    }
 }
 
 pub struct PollingManager {
@@ -23,6 +47,8 @@ impl PollingManager {
                 current_snapshot: initial_snapshot,
                 consecutive_failures: 0,
                 is_refreshing: false,
+                cached_oauth: None,
+                cached_oauth_at: None,
             })),
             refresh_tx,
         }
@@ -93,12 +119,17 @@ async fn perform_poll(app_handle: &AppHandle, state_lock: &Arc<Mutex<PollingStat
     // 2. Fetch config settings
     let settings = load_settings(app_handle);
 
-    // 3. Resolve active credentials (custom API key overrides keychain lookup)
-    let token_opt = settings.custom_token.clone().or_else(|| {
-        crate::keychain::get_token_from_keychain()
-            .map(|oauth| oauth.access_token)
-            .ok()
-    });
+    // 3. Resolve active credentials (custom API key overrides keychain lookup entirely —
+    // skip touching the keychain when it's set so we never prompt unnecessarily)
+    let resolved_oauth = if settings.custom_token.is_some() {
+        None
+    } else {
+        let mut state = state_lock.lock().unwrap();
+        get_cached_oauth(&mut state).ok()
+    };
+
+    let token_opt = settings.custom_token.clone()
+        .or_else(|| resolved_oauth.as_ref().map(|oauth| oauth.access_token.clone()));
 
     let token = match token_opt {
         Some(t) => t,
@@ -150,10 +181,9 @@ async fn perform_poll(app_handle: &AppHandle, state_lock: &Arc<Mutex<PollingStat
             let five_hour_reset = resp.five_hour.as_ref().and_then(|x| crate::network::format_reset_time(&x.resets_at));
             let seven_day_reset = resp.seven_day.as_ref().and_then(|x| crate::network::format_reset_time(&x.resets_at));
 
-            // Extract plan from credentials
-            let plan = crate::keychain::get_token_from_keychain()
-                .ok()
-                .and_then(|oauth| oauth.subscription_type)
+            // Extract plan from credentials already resolved in step 3 (no extra keychain hit)
+            let plan = resolved_oauth.as_ref()
+                .and_then(|oauth| oauth.subscription_type.clone())
                 .unwrap_or_else(|| "pro".to_string());
 
             // Parse spend/extra usage details (defaults to $0.54 / $100.00 for demo if empty/zero)
@@ -211,7 +241,9 @@ async fn perform_poll(app_handle: &AppHandle, state_lock: &Arc<Mutex<PollingStat
         }
         FetchResult::AuthExpired(err) => {
             log_msg("error", &format!("Authentication expired: {}", err));
-            
+            state.cached_oauth = None;
+            state.cached_oauth_at = None;
+
             let plan = state.current_snapshot.as_ref().map(|s| s.plan.clone()).unwrap_or_else(|| "pro".to_string());
             let snapshot = UsageSnapshot {
                 five_hour_utilization: 0,

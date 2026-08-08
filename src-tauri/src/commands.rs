@@ -9,9 +9,16 @@ pub async fn get_app_settings(app: AppHandle) -> Result<Settings, String> {
 }
 
 #[tauri::command]
-pub async fn save_app_settings(app: AppHandle, settings: Settings) -> Result<(), String> {
+pub async fn save_app_settings(app: AppHandle, state: State<'_, PollingManager>, settings: Settings) -> Result<(), String> {
     save_settings(&app, &settings)?;
-    // If settings are saved, wake up the polling thread to pick up the new interval immediately
+
+    // Reflect the (possibly changed) menu bar mode immediately, without waiting for the next poll tick
+    if let Ok(guard) = state.state.lock() {
+        if let Some(snapshot) = guard.current_snapshot.clone() {
+            crate::tray::update_tray_menu_text(&app, &snapshot, &settings.menu_bar_mode);
+        }
+    }
+
     Ok(())
 }
 
